@@ -1,0 +1,41 @@
+# Build artifacts
+/build/
+/bin/
+/obj/
+
+# Compiled source files
+*.o
+*.so
+*.dll
+*.exe
+
+# Dependency directories
+/node_modules/
+/.venv/
+/env/
+
+# IDE and editor files
+.vscode/
+.idea/
+*.swp
+*.sublime-workspace
+*.sublime-project
+
+# OS generated files
+.DS_Store
+Thumbs.db
+
+# Log files
+*.log
+
+# Python cache
+__pycache__/
+*.pyc
+
+# CMake files
+CMakeFiles/
+CMakeCache.txt
+
+# Other
+*.tmp
+*.bak
