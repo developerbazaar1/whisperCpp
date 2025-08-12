@@ -2,65 +2,96 @@ const express = require('express');
 const { exec } = require('child_process');
 const path = require('path');
 const fs = require('fs');
-
+const axios = require('axios');
+require("dotenv").config();
+const cors = require("cors");
+const { v4: uuidv4 } = require('uuid');  // Importing UUID for unique file naming
+const { downloadFile} = require("./utils/utils.js")
+const {apiKeyMiddleware} = require("./middleware/checkApiKey.js")
 const app = express();
+app.use(express.json());
 
-app.use(express.json());  // Use express.json() to parse incoming JSON requests
+app.use(cors());
+process.env.UV_THREADPOOL_SIZE = 128;
 
 const PORT = process.env.PORT || 3000;
 
-app.post('/transcribe', async (req, res) => {
-    try {
-        const audioFileName = 'oneHourAudio.mp3';  // Hardcoded for now
+// Function to process the transcription (run Whisper CLI)
+const processTranscription = (audioFilePath, outputFilePath, res) => {
+    const whisperExecutablePath = '/root/whisperCppModel/whisper.cpp/build/bin/whisper-cli';  // Path to Whisper CLI
+    const modelPath = '/root/whisperCppModel/whisper.cpp/models/ggml-base.en.bin';  // Path to model file
 
-        const whisperExecutablePath = '/root/whisperCppModel/whisper.cpp/build/bin/whisper-cli';  // Path to Whisper CLI
-        const modelPath = '/root/whisperCppModel/whisper.cpp/models/ggml-base.en.bin';  // Path to model file
-        const audioFilePath = path.join(__dirname, audioFileName);  // Audio file path
+    const command = `${whisperExecutablePath} --model ${modelPath} --file ${audioFilePath} --threads 60 --processors 8 --output-txt --output-file ${outputFilePath}`;
 
-        console.log("Audio path:", audioFilePath);
-
-        // Check if the audio file exists
-        if (!fs.existsSync(audioFilePath)) {
-            return res.status(404).send({ error: 'Audio file not found' });
+    exec(command, (error, stdout, stderr) => {
+        if (error) {
+            console.error(`Error executing command: ${error.message}`);
+            return res.status(500).send({ error: 'Transcription failed during command execution' });
         }
 
-        // Define the output file path for transcription
-        const outputFilePath = path.join(__dirname, 'output');
+        if (stderr) {
+            console.warn(`stderr: ${stderr}`);
+        }
 
-        // Build the command for Whisper CLI
-        const command = `${whisperExecutablePath} --model ${modelPath} --file ${audioFilePath} --threads 60 --processors 6 --output-txt --output-file ${outputFilePath}`;
-
-        // Execute the command
-        exec(command, (error, stdout, stderr) => {
-            // Check if there's an error from executing the command
-            if (error) {
-                console.error(`Error executing command: ${error.message}`);
-                return res.status(500).send({ error: 'Transcription failed during command execution' });
+        fs.readFile(outputFilePath + '.txt', 'utf8', (err, data) => {
+            if (err) {
+                console.error(`Error reading transcription file: ${err.message}`);
+                return res.status(500).send({ error: 'Failed to read transcription output' });
             }
+		 // Clean up transcription result by removing newline characters
+            const cleanedTranscription = data.replace(/\n/g, ' ').trim();
+            res.status(200).json({ transcription: cleanedTranscription, message:"Audio Transcribe successfully" });
 
-            // Log stderr (useful for debugging, but we don't consider it a failure here)
-            if (stderr) {
-                console.warn(`stderr: ${stderr}`);
-            }
-
-            // Read the output file (transcription result)
-            fs.readFile(outputFilePath + '.txt', 'utf8', (err, data) => {
-                if (err) {
-                    console.error(`Error reading transcription file: ${err.message}`);
-                    return res.status(500).send({ error: 'Failed to read transcription output' });
+            // Clean up the downloaded audio file and output file
+            fs.unlink(audioFilePath, (unlinkErr) => {
+                if (unlinkErr) {
+                    console.error('Error deleting downloaded file:', unlinkErr.message);
+                } else {
+                    console.log('Downloaded audio file deleted successfully');
                 }
+            });
 
-                // Send the transcription result back to the client
-                res.json({ transcription: data });
+            fs.unlink(outputFilePath + '.txt', (unlinkErr) => {
+                if (unlinkErr) {
+                    console.error('Error deleting transcription output file:', unlinkErr.message);
+                } else {
+                    console.log('Transcription output file deleted successfully');
+                }
             });
         });
+    });
+};
+
+app.post('/transcribe', apiKeyMiddleware, async (req, res) => {
+    try {
+        const { audioUrl } = req.body;  // Get audio file URL from the request body
+        if (!audioUrl) {
+            return res.status(400).send({ error: 'Audio URL is required' });
+        }
+
+        const uniqueId = uuidv4();  // Generate a unique ID for each request
+        const audioFileName = `${uniqueId}_downloaded_audio.mp3`;  // Generate unique name for the downloaded file
+        const audioFilePath = path.join(__dirname, audioFileName);  // Audio file path
+
+        const outputFileName = `${uniqueId}_output`;  // Generate unique name for the output file
+        const outputFilePath = path.join(__dirname, outputFileName);  // Output file path
+
+        // Download the audio file from the URL
+        console.log("Downloading audio file...");
+        await downloadFile(audioUrl, audioFilePath);
+
+        console.log("Audio file downloaded:", audioFilePath);
+
+        // Process the transcription
+        processTranscription(audioFilePath, outputFilePath, res);
+
     } catch (err) {
         console.error(`Unexpected error: ${err.message}`);
         return res.status(500).send({ error: 'An unexpected error occurred' });
     }
 });
 
-app.listen(PORT, () => {
+app.listen(PORT, '0.0.0.0', () => {
     console.log(`Server is running on http://localhost:${PORT}`);
 });
 
