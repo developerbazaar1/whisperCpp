@@ -19,7 +19,7 @@ const PORT = process.env.PORT || 3000;
 // Function to process the transcription (run Whisper CLI)
 const processTranscription = (audioFilePath, outputFilePath, res) => {
     const whisperExecutablePath = '/root/whisperCppModel/whisper.cpp/build/bin/whisper-cli';  // Path to Whisper CLI
-    const modelPath = '/root/whisperCppModel/whisper.cpp/models/ggml-base.en.bin';  // Path to model file
+    const modelPath = '/root/whisperCppModel/whisper.cpp/models/ggml-small.en.bin';  // Path to model file
 
     const command = `${whisperExecutablePath} --model ${modelPath} --file ${audioFilePath} --threads 60 --processors 8 --output-txt --output-file ${outputFilePath}`;
 
